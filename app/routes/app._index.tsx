@@ -18,56 +18,116 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
 
   const id = Number(formData.get("id"));
-  const email = formData.get("email")?.toString();
-  const name = formData.get("name")?.toString();
-  const company = formData.get("company")?.toString();
+  if (!id) return { error: "Missing inquiry id" };
 
-  if (!id || !email || !name || !company) {
-    return { error: "Missing required form data" };
+  const inquiry = await db.wholesaleInquiry.findUnique({ where: { id } });
+  if (!inquiry) return { error: "Inquiry not found" };
+
+  if (inquiry.status === "APPROVED") {
+    return { error: "This inquiry is already approved" };
   }
 
   try {
-    const response = await admin.graphql(
+    const customerInput = {
+      email: inquiry.contactEmail,
+      firstName: inquiry.contactName,
+      lastName: "(wholesale)",
+      note: `Company: ${inquiry.companyName}`,
+      tags: ["Wholesale", "Inquiry-Approved"],
+    };
+
+    const findResponse = await admin.graphql(
       `#graphql
-        mutation customerCreate($input: CustomerInput!) {
-          customerCreate(input: $input) {
-            customer {
+        query FindCustomerByEmail($query: String!) {
+          customers(first: 1, query: $query) {
+            nodes {
               id
-            }
-            userErrors {
-              field
-              message
+              email
             }
           }
         }
       `,
-      {
-        variables: {
-          input: {
-            email,
-            firstName: name,
-            lastName: "(wholesale)",
-            note: `Company: ${company}`,
-            tags: ["Wholesale", "Inquiry-Approved"],
-          },
-        },
-      },
+      { variables: { query: `email:${inquiry.contactEmail}` } },
     );
 
-    const responseJson = (await response.json()) as any;
-    const graphQLErrors = responseJson.errors ?? [];
-    if (graphQLErrors.length > 0) {
-      return { error: graphQLErrors[0]?.message ?? "GraphQL request failed" };
+    const findJson = (await findResponse.json()) as any;
+    const findGraphQLErrors = findJson.errors ?? [];
+    if (findGraphQLErrors.length > 0) {
+      return {
+        error: findGraphQLErrors[0]?.message ?? "GraphQL request failed",
+      };
     }
 
-    const userErrors = responseJson.data?.customerCreate?.userErrors ?? [];
+    const existingCustomerId = findJson.data?.customers?.nodes?.[0]?.id as
+      | string
+      | undefined;
 
+    let mutationResponse: Response;
+    if (existingCustomerId) {
+      mutationResponse = await admin.graphql(
+        `#graphql
+          mutation CustomerUpdate($input: CustomerInput!) {
+            customerUpdate(input: $input) {
+              customer {
+                id
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            input: {
+              id: existingCustomerId,
+              ...customerInput,
+            },
+          },
+        },
+      );
+    } else {
+      mutationResponse = await admin.graphql(
+        `#graphql
+          mutation CustomerCreate($input: CustomerInput!) {
+            customerCreate(input: $input) {
+              customer {
+                id
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            input: customerInput,
+          },
+        },
+      );
+    }
+
+    const mutationJson = (await mutationResponse.json()) as any;
+    const mutationGraphQLErrors = mutationJson.errors ?? [];
+    if (mutationGraphQLErrors.length > 0) {
+      return {
+        error: mutationGraphQLErrors[0]?.message ?? "GraphQL request failed",
+      };
+    }
+
+    const mutationPayload = existingCustomerId
+      ? mutationJson.data?.customerUpdate
+      : mutationJson.data?.customerCreate;
+    const userErrors = mutationPayload?.userErrors ?? [];
     if (userErrors.length > 0) {
       return { errors: userErrors };
     }
 
     await db.wholesaleInquiry.update({
-      where: { id },
+      where: { id: inquiry.id },
       data: { status: "APPROVED" },
     });
 
@@ -103,7 +163,7 @@ export default function Index() {
             {status === "PENDING" ? (
               <s-button
                 type="button"
-                variant="primary"
+                variant="secondary"
                 loading={isApproving}
                 onClick={() =>
                   fetcher.submit(
