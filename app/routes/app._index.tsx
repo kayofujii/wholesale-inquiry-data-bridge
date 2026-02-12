@@ -28,12 +28,37 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
+    const noteLines = [
+      `Company: ${inquiry.companyName}`,
+      `Phone: ${inquiry.phoneNumber}`,
+      inquiry.website ? `Website: ${inquiry.website}` : null,
+      inquiry.instagramUrl ? `Instagram: ${inquiry.instagramUrl}` : null,
+      inquiry.facebookUrl ? `Facebook: ${inquiry.facebookUrl}` : null,
+      inquiry.amazonShopUrl ? `Amazon: ${inquiry.amazonShopUrl}` : null,
+      inquiry.etsyShopUrl ? `Etsy: ${inquiry.etsyShopUrl}` : null,
+    ].filter(Boolean);
+
     const customerInput = {
-      email: inquiry.contactEmail,
-      firstName: inquiry.contactName,
-      lastName: "(wholesale)",
-      note: `Company: ${inquiry.companyName}`,
+      email: inquiry.email,
+      firstName: inquiry.firstName,
+      lastName: inquiry.lastName,
+      phone: inquiry.phoneNumber,
+      note: noteLines.join("\n"),
       tags: ["Wholesale", "Inquiry-Approved"],
+      ...(inquiry.address1
+        ? {
+            addresses: [
+              {
+                address1: inquiry.address1,
+                address2: inquiry.address2 ?? undefined,
+                city: inquiry.city ?? undefined,
+                province: inquiry.province ?? undefined,
+                zip: inquiry.postalCode ?? undefined,
+                countryCode: inquiry.country ?? undefined,
+              },
+            ],
+          }
+        : {}),
     };
 
     const findResponse = await admin.graphql(
@@ -47,7 +72,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           }
         }
       `,
-      { variables: { query: `email:${inquiry.contactEmail}` } },
+      { variables: { query: `email:${inquiry.email}` } },
     );
 
     const findJson = (await findResponse.json()) as any;
@@ -145,15 +170,15 @@ export default function Index() {
   const { inquiries } = useLoaderData<typeof loader>();
 
   const rowMarkup = inquiries.map(
-    ({ id, companyName, contactEmail, contactName, status }) => {
+    ({ id, firstName, lastName, email, companyName, status }) => {
       const isApproving =
         fetcher.state !== "idle" && fetcher.formData?.get("id") === String(id);
 
       return (
         <s-table-row id={id.toString()} key={id}>
           <s-table-cell>{companyName}</s-table-cell>
-          <s-table-cell>{contactName}</s-table-cell>
-          <s-table-cell>{contactEmail}</s-table-cell>
+          <s-table-cell>{firstName} {lastName}</s-table-cell>
+          <s-table-cell>{email}</s-table-cell>
           <s-table-cell>
             <s-badge tone={status === "PENDING" ? "caution" : "success"}>
               {status}
@@ -168,10 +193,7 @@ export default function Index() {
                 onClick={() =>
                   fetcher.submit(
                     {
-                      id: String(id),
-                      email: contactEmail,
-                      name: contactName,
-                      company: companyName,
+                      id: String(id)
                     },
                     { method: "post" },
                   )
@@ -202,7 +224,7 @@ export default function Index() {
         <s-table>
           <s-table-header-row>
             <s-table-header>Company</s-table-header>
-            <s-table-header>Contact</s-table-header>
+            <s-table-header>Name</s-table-header>
             <s-table-header>Email</s-table-header>
             <s-table-header>Status</s-table-header>
             <s-table-header>Action</s-table-header>
