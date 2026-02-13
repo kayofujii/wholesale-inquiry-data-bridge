@@ -49,6 +49,48 @@ Current `WholesaleInquiry` model (`prisma/schema.prisma`):
 - `npm run setup`: `prisma generate && prisma migrate deploy`.
 - `npm run typecheck`: React Router typegen + TypeScript check.
 
+## Testing (Playwright)
+
+This project includes E2E approval-flow tests in `tests/approval.spec.ts`.
+
+### What the approval test validates
+
+- Creates a `PENDING` wholesale inquiry row in the test DB.
+- Opens `/app`.
+- Clicks the row's `Approve` button.
+- Verifies status changes to `APPROVED`.
+- Verifies the approve button is removed for that row.
+
+### Run tests
+
+Run the approval spec:
+
+```bash
+E2E_TEST_MODE=true npx playwright test tests/approval.spec.ts
+```
+
+Run in headed mode:
+
+```bash
+E2E_TEST_MODE=true npx playwright test tests/approval.spec.ts --headed --project=chromium
+```
+
+Open interactive Playwright UI:
+
+```bash
+E2E_TEST_MODE=true npx playwright test --ui
+```
+
+Open last HTML report:
+
+```bash
+npx playwright show-report
+```
+
+### E2E mode behavior
+
+For tests, `E2E_TEST_MODE=true` bypasses Shopify admin authentication and external customer GraphQL calls in approval routes, so tests run fully local against Prisma/SQLite.
+
 ## Local development
 
 1. Install dependencies:
@@ -160,6 +202,14 @@ npm run dev
 ```
 
 - Ensure app code references current schema fields (`email`, `firstName`, `lastName`, etc.).
+
+### Playwright `webServer` startup fails
+
+If Playwright shows `Process from config.webServer was not able to start`, run the server command from `playwright.config.ts` manually to inspect the real error:
+
+```bash
+SHOPIFY_API_KEY=test SHOPIFY_API_SECRET=test SHOPIFY_APP_URL=http://127.0.0.1:3000 SCOPES=read_customers,write_customers E2E_TEST_MODE=true npm run build && SHOPIFY_API_KEY=test SHOPIFY_API_SECRET=test SHOPIFY_APP_URL=http://127.0.0.1:3000 SCOPES=read_customers,write_customers E2E_TEST_MODE=true PORT=3000 npm run start
+```
 
 ## Notes
 
